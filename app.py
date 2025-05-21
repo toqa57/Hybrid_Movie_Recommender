@@ -1,10 +1,16 @@
 # app.py
-import streamlit as st
-import pandas as pd
-import numpy as np
-from models.hybrid_model import HybridRecommender
-import time
-import os
+
+try:
+    import streamlit as st
+    import pandas as pd
+    import numpy as np
+    from models.hybrid_model import HybridRecommender
+    import time
+    import os
+except Exception as e:
+    with open("error.log", "w") as f:
+        f.write(str(e))
+    raise
 
 # Set page config
 st.set_page_config(
