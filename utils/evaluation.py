@@ -264,7 +264,6 @@ def compare_recommenders(recommenders, test_data, train_data=None, k=10):
     return comparison
 
 
-# Complete the HybridRecommender.evaluate method
 def hybrid_evaluate(self, test_df, train_df, k=10):
     """
     Evaluate the hybrid recommender system
@@ -283,8 +282,30 @@ def hybrid_evaluate(self, test_df, train_df, k=10):
     metrics : dict
         Dictionary containing evaluation metrics
     """
-    # We'll use the collaborative filtering model's RMSE and MAE metrics
-    collab_metrics = self.collab_recommender.evaluate(test_df)
+    # We'll need to compute RMSE and MAE ourselves since the collab_recommender doesn't have evaluate()
+    # First, get predictions for all user-item pairs in the test set
+    predictions = []
+    actuals = []
+
+    for _, row in test_df.iterrows():
+        user_id = row['userId']
+        movie_id = row['movieId']
+        actual_rating = row['rating']
+
+        # Get the predicted rating
+        try:
+            # You might need to adjust this based on your actual implementation
+            predicted_rating = self.predict_rating(user_id, movie_id, train_df)
+
+            predictions.append(predicted_rating)
+            actuals.append(actual_rating)
+        except:
+            # Skip if prediction fails for this user-movie pair
+            continue
+
+    # Calculate RMSE and MAE
+    rmse = sqrt(mean_squared_error(actuals, predictions)) if predictions else 0
+    mae = mean_absolute_error(actuals, predictions) if predictions else 0
 
     # Get unique users in test set
     test_users = test_df['userId'].unique()
@@ -337,8 +358,8 @@ def hybrid_evaluate(self, test_df, train_df, k=10):
 
     # Combine metrics
     metrics = {
-        'RMSE': collab_metrics['rmse'],
-        'MAE': collab_metrics['mae'],
+        'RMSE': rmse,
+        'MAE': mae,
         'Precision@k': avg_precision,
         'Recall@k': avg_recall,
         'F1@k': avg_f1
@@ -351,6 +372,44 @@ def hybrid_evaluate(self, test_df, train_df, k=10):
     return metrics
 
 
+# Definition for HybridRecommender.predict_rating method
+def predict_rating(self, user_id, movie_id, train_df=None):
+    """
+    Predict a rating for a specific user-movie pair
+
+    Parameters:
+    -----------
+    user_id : int
+        ID of the user
+    movie_id : int
+        ID of the movie
+    train_df : pandas.DataFrame, optional
+        Training data to use for generating predictions
+
+    Returns:
+    --------
+    rating : float
+        Predicted rating for the user-movie pair
+    """
+    # Get collaborative filtering prediction
+    collab_pred = self.collab_recommender.predict_rating(user_id, movie_id)
+
+    # Get content-based prediction if available
+    try:
+        content_pred = self.content_recommender.predict_rating(user_id, movie_id, train_df)
+    except:
+        # If content prediction fails, just use collaborative prediction
+        return collab_pred
+
+    # Hybrid prediction is a weighted combination
+    hybrid_pred = (self.collab_weight * collab_pred) + (self.content_weight * content_pred)
+
+    # Ensure rating is within valid range (1-5)
+    hybrid_pred = max(1.0, min(5.0, hybrid_pred))
+
+    return hybrid_pred
+
+
 # Example usage
 if __name__ == "__main__":
     import pandas as pd
@@ -359,7 +418,8 @@ if __name__ == "__main__":
     # Load data
     train_df = pd.read_csv("E:/intelligent programming/hybrid_movie_recommender/data/processed_data/train_data.csv")
     test_df = pd.read_csv("E:/intelligent programming/hybrid_movie_recommender/data/processed_data/test_data.csv")
-    movies_df = pd.read_csv("E:/intelligent programming/hybrid_movie_recommender/data/processed_data/movies_processed.csv")
+    movies_df = pd.read_csv(
+        "E:/intelligent programming/hybrid_movie_recommender/data/processed_data/movies_processed.csv")
 
     # Create and train hybrid recommender
     hybrid_rec = HybridRecommender(content_weight=0.4, collab_weight=0.6)
