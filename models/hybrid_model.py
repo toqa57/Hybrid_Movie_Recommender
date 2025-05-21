@@ -6,6 +6,9 @@ from models.content_based import ContentBasedRecommender
 from models.collaborative_filtering import CollaborativeFilteringRecommender
 
 
+from models.content_based import ContentBasedRecommender  # Your existing import
+
+
 class HybridRecommender:
     """
     Hybrid movie recommendation system that combines content-based and collaborative filtering approaches.
@@ -100,7 +103,11 @@ class HybridRecommender:
             user_id, n=top_n * 3, min_rating=min_collab_rating, exclude_rated=True, ratings_df=ratings_df
         )
 
-        # If either recommender returns empty results, use only the other one
+        # Handle cases when one or both recommenders return empty
+        if content_recs.empty and collab_recs.empty:
+            print("No recommendations available from either model.")
+            return pd.DataFrame()
+
         if content_recs.empty:
             print("No content-based recommendations available. Using only collaborative filtering.")
             return collab_recs.head(top_n)
@@ -111,15 +118,14 @@ class HybridRecommender:
 
         # Normalize scores for each approach
         content_recs['normalized_content_score'] = (
-                content_recs['content_score'] / content_recs['content_score'].max()
+            content_recs['content_score'] / content_recs['content_score'].max()
         )
 
         collab_recs['normalized_collab_score'] = (
-                (collab_recs['predicted_rating'] - 1) / 4.0  # Convert from 1-5 scale to 0-1
+            (collab_recs['predicted_rating'] - 1) / 4.0  # Convert from 1-5 scale to 0-1
         )
 
         # Combine recommendations
-        # First, create a dictionary to store hybrid scores
         movie_scores = {}
 
         # Add content-based scores
@@ -128,33 +134,29 @@ class HybridRecommender:
             movie_scores[movie_id] = {
                 'title': row['title'],
                 'content_score': row['normalized_content_score'],
-                'collab_score': 0.0,  # Default if not found in collab recommendations
+                'collab_score': 0.0,
                 'hybrid_score': self.content_weight * row['normalized_content_score']
             }
 
         # Add collaborative filtering scores
         for _, row in collab_recs.iterrows():
             movie_id = row['movieId']
+            collab_score = row['normalized_collab_score']
             if movie_id in movie_scores:
-                # Movie exists in content-based recommendations
-                movie_scores[movie_id]['collab_score'] = row['normalized_collab_score']
-                movie_scores[movie_id]['hybrid_score'] += self.collab_weight * row['normalized_collab_score']
+                movie_scores[movie_id]['collab_score'] = collab_score
+                movie_scores[movie_id]['hybrid_score'] += self.collab_weight * collab_score
             else:
-                # Movie only in collaborative filtering recommendations
+                # Movie not in content recs, add with 0 content score
                 movie_scores[movie_id] = {
                     'title': row['title'],
-                    'content_score': 0.0,  # Default if not found in content recommendations
-                    'collab_score': row['normalized_collab_score'],
-                    'hybrid_score': self.collab_weight * row['normalized_collab_score']
+                    'content_score': 0.0,
+                    'collab_score': collab_score,
+                    'hybrid_score': self.collab_weight * collab_score
                 }
 
-        # Convert dictionary to DataFrame
-        hybrid_recs = pd.DataFrame.from_dict(movie_scores, orient='index')
-        hybrid_recs.reset_index(inplace=True)
-        hybrid_recs.rename(columns={'index': 'movieId'}, inplace=True)
+        # Convert to DataFrame and sort
+        hybrid_df = pd.DataFrame.from_dict(movie_scores, orient='index')
+        hybrid_df = hybrid_df.sort_values('hybrid_score', ascending=False)
 
-        # Sort by hybrid score and get top N
-        hybrid_recs = hybrid_recs.sort_values('hybrid_score', ascending=False).head(top_n)
-
-        return hybrid_recs
-
+        # Return top_n recommendations
+        return hybrid_df.head(top_n).reset_index().rename(columns={'index': 'movieId'})
